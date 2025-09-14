@@ -13,8 +13,8 @@ info:
   description: API for managing network devices and executing automation tasks
   version: 1.0.0
   contact:
-    name: Brandon Seaver
-    email: seaverb@icloud.com
+    name: Network Engineering Team
+    email: neteng@example.com
 
 servers:
   - url: https://api.network-automation.local/v1
