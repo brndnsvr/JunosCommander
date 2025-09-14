@@ -22,7 +22,7 @@ JunosCommander is a high-performance, secure network automation tool designed sp
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/junoscommander.git
+git clone https://github.com/brndnsvr/junoscommander.git
 cd junoscommander
 ```
 
@@ -54,7 +54,7 @@ docker-compose up -d
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/junoscommander.git
+git clone https://github.com/brndnsvr/junoscommander.git
 cd junoscommander
 
 # Install dependencies
@@ -382,8 +382,8 @@ Copyright (c) 2024 Your Organization. All rights reserved.
 ## Support
 
 - Documentation: [docs/](docs/)
-- Issues: [GitHub Issues](https://github.com/your-org/junoscommander/issues)
-- Email: netops-team@your-org.com
+- Issues: [GitHub Issues](https://github.com/brndnsvr/junoscommander/issues)
+- Email: seaverb@icloud.com
 
 ## Roadmap
 
