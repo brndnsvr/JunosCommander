@@ -1,0 +1,285 @@
+# Production Docker Compose with Traefik Integration
+# This file extends the base docker-compose.yml with Traefik reverse proxy
+
+version: '3.8'
+
+services:
+  # Traefik Reverse Proxy
+  traefik:
+    image: traefik:v3.1
+    container_name: junoscommander-traefik
+    restart: unless-stopped
+    command:
+      - --configfile=/traefik/traefik.yml
+    ports:
+      - "80:80"      # HTTP (redirects to HTTPS)
+      - "443:443"    # HTTPS
+      - "8080:8080"  # Traefik Dashboard (secured)
+    volumes:
+      # Traefik configuration
+      - ./traefik/traefik.yml:/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/dynamic:ro
+
+      # Docker socket for service discovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+      # Certificates storage
+      - traefik-certificates:/certificates
+
+      # Logs
+      - ./logs/traefik:/logs
+    environment:
+      # Let's Encrypt configuration
+      - TRAEFIK_LOG_LEVEL=INFO
+      - TRAEFIK_API_DASHBOARD=true
+      - TRAEFIK_API_DEBUG=false
+
+      # Optional: DNS provider API keys for DNS-01 challenge
+      # - CLOUDFLARE_EMAIL=your-email@example.com
+      # - CLOUDFLARE_DNS_API_TOKEN=your-api-token
+    labels:
+      - "traefik.enable=true"
+
+      # Dashboard route
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.example.com`)"  # CHANGE THIS
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls=true"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+
+      # Security for dashboard
+      - "traefik.http.routers.traefik-dashboard.middlewares=dashboard-auth@file,dashboard-whitelist@file"
+    networks:
+      - junoscommander-net
+      - traefik-net
+    depends_on:
+      - junoscommander
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # JunosCommander Application (updated for Traefik)
+  junoscommander:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: junoscommander
+    restart: unless-stopped
+    expose:
+      - "8080"  # Don't expose port directly - let Traefik handle it
+    volumes:
+      - ./data:/app/data
+      - ./logs/app:/app/logs
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - SERVER_MODE=production
+      - DB_PATH=/app/data/junoscommander.db
+      - AD_SERVER=ldap://openldap:389
+      - AD_BASE_DN=dc=example,dc=com
+
+      # Trust proxy headers from Traefik
+      - TRUSTED_PROXIES=172.16.0.0/12
+      - PROXY_HEADERS=X-Forwarded-For,X-Forwarded-Proto,X-Forwarded-Host
+    labels:
+      - "traefik.enable=true"
+
+      # Main web interface
+      - "traefik.http.routers.junoscommander-web.rule=Host(`junoscommander.example.com`) || Host(`jc.example.com`)"  # CHANGE THESE
+      - "traefik.http.routers.junoscommander-web.entrypoints=websecure"
+      - "traefik.http.routers.junoscommander-web.tls=true"
+      - "traefik.http.routers.junoscommander-web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.junoscommander-web.service=junoscommander"
+
+      # Service definition
+      - "traefik.http.services.junoscommander.loadbalancer.server.port=8080"
+      - "traefik.http.services.junoscommander.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.junoscommander.loadbalancer.healthcheck.interval=30s"
+
+      # Middleware for main routes
+      - "traefik.http.routers.junoscommander-web.middlewares=security-headers@file,compression@file,ddos-protection@file"
+
+      # API routes with stricter rate limiting
+      - "traefik.http.routers.junoscommander-api.rule=Host(`junoscommander.example.com`) && PathPrefix(`/api/`)"  # CHANGE DOMAIN
+      - "traefik.http.routers.junoscommander-api.entrypoints=websecure"
+      - "traefik.http.routers.junoscommander-api.tls=true"
+      - "traefik.http.routers.junoscommander-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.junoscommander-api.service=junoscommander"
+      - "traefik.http.routers.junoscommander-api.middlewares=security-headers@file,api-rate-limit@file"
+      - "traefik.http.routers.junoscommander-api.priority=100"
+
+      # WebSocket support
+      - "traefik.http.routers.junoscommander-ws.rule=Host(`junoscommander.example.com`) && PathPrefix(`/ws/`)"  # CHANGE DOMAIN
+      - "traefik.http.routers.junoscommander-ws.entrypoints=websecure"
+      - "traefik.http.routers.junoscommander-ws.tls=true"
+      - "traefik.http.routers.junoscommander-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.junoscommander-ws.service=junoscommander"
+      - "traefik.http.routers.junoscommander-ws.priority=150"
+    networks:
+      - junoscommander-net
+    depends_on:
+      - openldap
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # OpenLDAP (unchanged but with health check)
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: junoscommander-ldap
+    restart: unless-stopped
+    environment:
+      LDAP_ORGANISATION: "Example Corp"
+      LDAP_DOMAIN: "example.com"
+      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_CONFIG_PASSWORD: "config"
+      LDAP_TLS: "false"
+    expose:
+      - "389"
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    networks:
+      - junoscommander-net
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "dc=example,dc=com", "-s", "base"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # phpLDAPadmin with Traefik integration
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: junoscommander-ldap-admin
+    restart: unless-stopped
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: "openldap"
+      PHPLDAPADMIN_HTTPS: "false"
+    expose:
+      - "80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.phpldapadmin.rule=Host(`ldap-admin.example.com`)"  # CHANGE THIS
+      - "traefik.http.routers.phpldapadmin.entrypoints=websecure"
+      - "traefik.http.routers.phpldapadmin.tls=true"
+      - "traefik.http.routers.phpldapadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.phpldapadmin.middlewares=security-headers@file,dashboard-auth@file"
+      - "traefik.http.services.phpldapadmin.loadbalancer.server.port=80"
+    depends_on:
+      - openldap
+    networks:
+      - junoscommander-net
+
+  # Prometheus for metrics collection (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: junoscommander-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=https://prometheus.example.com'  # CHANGE THIS
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.example.com`)"  # CHANGE THIS
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.prometheus.middlewares=security-headers@file,dashboard-auth@file"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    networks:
+      - junoscommander-net
+    depends_on:
+      - traefik
+
+  # Grafana for metrics visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: junoscommander-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin  # CHANGE THIS
+      - GF_SERVER_ROOT_URL=https://grafana.example.com  # CHANGE THIS
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    expose:
+      - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.example.com`)"  # CHANGE THIS
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana.middlewares=security-headers@file"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    networks:
+      - junoscommander-net
+    depends_on:
+      - prometheus
+
+  # Log aggregation with Loki (optional)
+  loki:
+    image: grafana/loki:latest
+    container_name: junoscommander-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    expose:
+      - "3100"
+    networks:
+      - junoscommander-net
+
+  # Error pages service (optional)
+  error-pages:
+    image: nginx:alpine
+    container_name: junoscommander-error-pages
+    restart: unless-stopped
+    volumes:
+      - ./web/error-pages:/usr/share/nginx/html:ro
+      - ./nginx/error-pages.conf:/etc/nginx/conf.d/default.conf:ro
+    expose:
+      - "80"
+    networks:
+      - junoscommander-net
+
+networks:
+  junoscommander-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+  traefik-net:
+    driver: bridge
+
+volumes:
+  ldap-data:
+  ldap-config:
+  traefik-certificates:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local

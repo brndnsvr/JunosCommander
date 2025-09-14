@@ -1,0 +1,201 @@
+# JunosCommander Production Makefile
+# Multi-container orchestration with Traefik, PostgreSQL, Redis, and monitoring
+
+.PHONY: help
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# Environment Setup
+.PHONY: setup
+setup: ## Initial production environment setup
+	@echo "Setting up production environment..."
+	@cp .env.production .env
+	@echo "Please edit .env with your production values"
+	@mkdir -p traefik postgres redis monitoring/dashboards monitoring/datasources scripts/backup scripts/migration logs
+	@touch traefik/acme.json && chmod 600 traefik/acme.json
+	@echo "Production environment prepared. Edit .env before deploying."
+
+# Docker Commands
+.PHONY: build
+build: ## Build production Docker images
+	@echo "Building production images..."
+	@docker-compose -f docker-compose.production.yml build --no-cache
+
+.PHONY: up
+up: ## Start all production services
+	@echo "Starting production services..."
+	@docker-compose -f docker-compose.production.yml up -d
+	@echo "Waiting for services to be healthy..."
+	@sleep 10
+	@make health-check
+
+.PHONY: down
+down: ## Stop all production services
+	@echo "Stopping production services..."
+	@docker-compose -f docker-compose.production.yml down
+
+.PHONY: restart
+restart: ## Restart all production services
+	@make down
+	@make up
+
+.PHONY: logs
+logs: ## Show logs for all services
+	@docker-compose -f docker-compose.production.yml logs -f
+
+.PHONY: logs-app
+logs-app: ## Show application logs
+	@docker-compose -f docker-compose.production.yml logs -f junoscommander-1 junoscommander-2
+
+.PHONY: logs-traefik
+logs-traefik: ## Show Traefik logs
+	@docker-compose -f docker-compose.production.yml logs -f traefik
+
+# Health Checks
+.PHONY: health-check
+health-check: ## Check health of all services
+	@echo "Checking service health..."
+	@docker-compose -f docker-compose.production.yml ps
+	@echo ""
+	@echo "Application Health:"
+	@curl -s http://localhost:8080/health || echo "Application not responding"
+	@echo ""
+	@echo "Database Health:"
+	@docker-compose -f docker-compose.production.yml exec -T postgres pg_isready || echo "Database not ready"
+	@echo ""
+	@echo "Redis Health:"
+	@docker-compose -f docker-compose.production.yml exec -T redis redis-cli ping || echo "Redis not responding"
+
+# Database Management
+.PHONY: db-migrate
+db-migrate: ## Run database migrations
+	@echo "Running database migrations..."
+	@docker-compose -f docker-compose.production.yml exec -T postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /docker-entrypoint-initdb.d/init.sql
+
+.PHONY: db-backup
+db-backup: ## Backup PostgreSQL database
+	@echo "Backing up database..."
+	@mkdir -p backups
+	@docker-compose -f docker-compose.production.yml exec -T postgres pg_dump -U $(POSTGRES_USER) $(POSTGRES_DB) | gzip > backups/junoscommander_$(shell date +%Y%m%d_%H%M%S).sql.gz
+	@echo "Backup saved to backups/junoscommander_$(shell date +%Y%m%d_%H%M%S).sql.gz"
+
+.PHONY: db-restore
+db-restore: ## Restore database from backup (BACKUP=filename.sql.gz)
+	@if [ -z "$(BACKUP)" ]; then echo "Usage: make db-restore BACKUP=filename.sql.gz"; exit 1; fi
+	@echo "Restoring database from $(BACKUP)..."
+	@gunzip -c $(BACKUP) | docker-compose -f docker-compose.production.yml exec -T postgres psql -U $(POSTGRES_USER) $(POSTGRES_DB)
+
+# SSL Certificate Management
+.PHONY: ssl-check
+ssl-check: ## Check SSL certificate status
+	@echo "Checking SSL certificate..."
+	@docker-compose -f docker-compose.production.yml exec -T traefik cat /acme.json | jq '.Certificates[0].certificate' -r | openssl x509 -noout -dates
+
+.PHONY: ssl-renew
+ssl-renew: ## Force SSL certificate renewal
+	@echo "Renewing SSL certificate..."
+	@docker-compose -f docker-compose.production.yml exec -T traefik rm -f /acme.json
+	@docker-compose -f docker-compose.production.yml restart traefik
+
+# Monitoring
+.PHONY: metrics
+metrics: ## Show current metrics
+	@echo "Application Metrics:"
+	@curl -s http://localhost:9090/metrics | grep -E "^junoscommander_" | head -20
+
+.PHONY: grafana-open
+grafana-open: ## Open Grafana dashboard
+	@echo "Opening Grafana at http://localhost:3000"
+	@open http://localhost:3000 || xdg-open http://localhost:3000
+
+# Scaling
+.PHONY: scale-up
+scale-up: ## Scale up application instances (COUNT=3)
+	@COUNT=$${COUNT:-3}; \
+	echo "Scaling to $$COUNT instances..."; \
+	docker-compose -f docker-compose.production.yml up -d --scale junoscommander=$$COUNT
+
+.PHONY: scale-down
+scale-down: ## Scale down to single instance
+	@echo "Scaling down to 1 instance..."
+	@docker-compose -f docker-compose.production.yml up -d --scale junoscommander=1
+
+# Maintenance
+.PHONY: maintenance-on
+maintenance-on: ## Enable maintenance mode
+	@echo "Enabling maintenance mode..."
+	@docker-compose -f docker-compose.production.yml exec -T traefik touch /tmp/maintenance
+
+.PHONY: maintenance-off
+maintenance-off: ## Disable maintenance mode
+	@echo "Disabling maintenance mode..."
+	@docker-compose -f docker-compose.production.yml exec -T traefik rm -f /tmp/maintenance
+
+# Security
+.PHONY: security-scan
+security-scan: ## Run security scan on images
+	@echo "Running security scan..."
+	@docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image junoscommander:latest
+
+.PHONY: generate-passwords
+generate-passwords: ## Generate secure passwords
+	@echo "Generating secure passwords..."
+	@echo "SESSION_SECRET=$$(openssl rand -hex 32)"
+	@echo "JWT_SECRET=$$(openssl rand -hex 64)"
+	@echo "POSTGRES_PASSWORD=$$(openssl rand -base64 32)"
+	@echo "REDIS_PASSWORD=$$(openssl rand -base64 32)"
+
+# Deployment
+.PHONY: deploy
+deploy: ## Full production deployment
+	@echo "Starting production deployment..."
+	@make setup
+	@echo "Please configure .env file and press Enter to continue..."
+	@read dummy
+	@make build
+	@make up
+	@make db-migrate
+	@make health-check
+	@echo "Deployment complete!"
+
+.PHONY: upgrade
+upgrade: ## Zero-downtime upgrade
+	@echo "Starting zero-downtime upgrade..."
+	@make build
+	@docker-compose -f docker-compose.production.yml up -d --no-deps --scale junoscommander=3 junoscommander
+	@sleep 10
+	@docker-compose -f docker-compose.production.yml up -d --no-deps --scale junoscommander=2 junoscommander
+	@echo "Upgrade complete!"
+
+# Cleanup
+.PHONY: clean
+clean: ## Clean up volumes and orphan containers
+	@echo "Cleaning up..."
+	@docker-compose -f docker-compose.production.yml down -v --remove-orphans
+
+.PHONY: clean-all
+clean-all: ## Remove everything including images
+	@echo "Removing all containers, volumes, and images..."
+	@docker-compose -f docker-compose.production.yml down -v --rmi all --remove-orphans
+
+# Development
+.PHONY: dev-ssl
+dev-ssl: ## Generate self-signed certificate for development
+	@echo "Generating self-signed certificate..."
+	@openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+		-keyout traefik/cert.key -out traefik/cert.crt \
+		-subj "/C=US/ST=State/L=City/O=JunosCommander/CN=localhost"
+
+.PHONY: test-integration
+test-integration: ## Run integration tests against production stack
+	@echo "Running integration tests..."
+	@docker run --rm --network junoscommander_backend \
+		-e API_URL=http://junoscommander-1:8080 \
+		junoscommander-tests
+
+# Variables from .env
+include .env
+export

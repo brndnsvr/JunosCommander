@@ -1,0 +1,280 @@
+# Traefik Dynamic Configuration - Security & Middleware
+# This file contains all security middleware and routing configurations
+
+http:
+  # Middleware definitions
+  middlewares:
+    # Security Headers Middleware
+    security-headers:
+      headers:
+        # Basic security headers
+        contentTypeNosniff: true
+        browserXssFilter: true
+        forceSTSHeader: true
+        frameDeny: true
+
+        # HSTS Configuration (HTTP Strict Transport Security)
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000  # 1 year
+
+        # Custom headers for enhanced security
+        customFrameOptionsValue: "SAMEORIGIN"
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+        # Content Security Policy for JunosCommander
+        contentSecurityPolicy: >-
+          default-src 'self';
+          script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com;
+          style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com;
+          img-src 'self' data: https:;
+          font-src 'self' https:;
+          connect-src 'self' ws: wss:;
+          form-action 'self';
+          frame-ancestors 'none';
+          base-uri 'self';
+          manifest-src 'self';
+          media-src 'self';
+          object-src 'none';
+          worker-src 'self' blob:;
+
+        # Referrer Policy
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+        # Feature Policy / Permissions Policy
+        permissionsPolicy: >-
+          accelerometer=(),
+          camera=(),
+          geolocation=(),
+          gyroscope=(),
+          magnetometer=(),
+          microphone=(),
+          payment=(),
+          usb=()
+
+    # Compression Middleware
+    compression:
+      compress: {}
+
+    # Rate Limiting for API endpoints
+    api-rate-limit:
+      rateLimit:
+        burst: 100
+        period: "1m"
+        average: 50
+        sourceCriterion:
+          requestHeaderName: "X-Forwarded-For"
+
+    # Stricter rate limiting for authentication endpoints
+    auth-rate-limit:
+      rateLimit:
+        burst: 10
+        period: "1m"
+        average: 5
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # DDoS Protection - Very restrictive
+    ddos-protection:
+      rateLimit:
+        burst: 200
+        period: "1m"
+        average: 100
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+            excludedIPs:
+              - "127.0.0.1/32"
+              - "10.0.0.0/8"
+              - "172.16.0.0/12"
+              - "192.168.0.0/16"
+
+    # Circuit Breaker for backend protection
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+        checkPeriod: "10s"
+        fallbackDuration: "30s"
+        recoveryDuration: "30s"
+
+    # Retry middleware for resilience
+    retry-policy:
+      retry:
+        attempts: 3
+        initialInterval: "100ms"
+
+    # Request timeout for long SSH operations
+    ssh-timeout:
+      forwardTimeout:
+        dialTimeout: "30s"
+        responseHeaderTimeout: "120s"  # SSH operations can take time
+        idleConnTimeout: "300s"        # 5 minutes for long-running tasks
+
+    # Dashboard authentication (basic auth - replace with OAuth/OIDC in production)
+    dashboard-auth:
+      basicAuth:
+        users:
+          # admin:secure_password (generate with htpasswd)
+          - "admin:$2y$10$XWjJRd6VKF5l8VWFjQ8Zk.OjGkxJl0eZG8KqPGjOgWzL4QXpzrD2."
+        removeHeader: true
+
+    # IP Whitelist for dashboard (optional)
+    dashboard-whitelist:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+        ipStrategy:
+          depth: 1
+
+    # Error page middleware
+    error-pages:
+      errors:
+        status:
+          - "400-499"
+          - "500-599"
+        service: error-pages-service
+        query: "/{status}.html"
+
+    # Redirect www to non-www
+    redirect-to-non-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: true
+
+    # Add correlation ID for request tracing
+    correlation-id:
+      headers:
+        customRequestHeaders:
+          X-Correlation-ID: ""
+
+  # Services definitions
+  services:
+    # JunosCommander main application
+    junoscommander:
+      loadBalancer:
+        servers:
+          - url: "http://junoscommander:8080"
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "10s"
+          scheme: "http"
+          followRedirects: true
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: "100ms"
+
+    # Error pages service (optional static error pages)
+    error-pages-service:
+      loadBalancer:
+        servers:
+          - url: "http://error-pages:80"
+
+  # Routers definitions
+  routers:
+    # Main JunosCommander application
+    junoscommander-web:
+      rule: "Host(`junoscommander.example.com`) || Host(`jc.example.com`)"  # CHANGE THESE DOMAINS
+      service: junoscommander
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+        - compression
+        - ddos-protection
+        - circuit-breaker
+        - retry-policy
+        - correlation-id
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "junoscommander.example.com"  # CHANGE THIS
+            sans:
+              - "jc.example.com"                # CHANGE THIS
+
+    # API endpoints with stricter rate limiting
+    junoscommander-api:
+      rule: "Host(`junoscommander.example.com`) && PathPrefix(`/api/`)"  # CHANGE DOMAIN
+      service: junoscommander
+      entryPoints:
+        - websecure
+      priority: 100  # Higher priority than main web route
+      middlewares:
+        - security-headers
+        - compression
+        - api-rate-limit
+        - circuit-breaker
+        - retry-policy
+        - correlation-id
+      tls:
+        certResolver: letsencrypt
+
+    # Authentication endpoints with very strict rate limiting
+    junoscommander-auth:
+      rule: "Host(`junoscommander.example.com`) && (Path(`/login`) || Path(`/logout`) || Path(`/auth/callback`))"  # CHANGE DOMAIN
+      service: junoscommander
+      entryPoints:
+        - websecure
+      priority: 200  # Highest priority
+      middlewares:
+        - security-headers
+        - compression
+        - auth-rate-limit
+        - correlation-id
+      tls:
+        certResolver: letsencrypt
+
+    # WebSocket endpoints for real-time updates
+    junoscommander-websocket:
+      rule: "Host(`junoscommander.example.com`) && PathPrefix(`/ws/`)"  # CHANGE DOMAIN
+      service: junoscommander
+      entryPoints:
+        - websecure
+      priority: 150
+      middlewares:
+        - security-headers
+        - ddos-protection
+        - correlation-id
+      tls:
+        certResolver: letsencrypt
+
+    # Traefik Dashboard (secured)
+    traefik-dashboard:
+      rule: "Host(`traefik.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"  # CHANGE DOMAIN
+      service: api@internal
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+        - compression
+        - dashboard-auth
+        - dashboard-whitelist
+        - auth-rate-limit
+      tls:
+        certResolver: letsencrypt
+
+    # Redirect www to non-www
+    redirect-www:
+      rule: "Host(`www.junoscommander.example.com`)"  # CHANGE DOMAIN
+      middlewares:
+        - redirect-to-non-www
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+# TCP configuration (for future use if needed)
+tcp:
+  routers: {}
+  services: {}
+
+# UDP configuration (for future use if needed)
+udp:
+  routers: {}
+  services: {}

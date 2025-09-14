@@ -1,0 +1,17 @@
+# PgBouncer user authentication file
+# Format: "username" "password_hash"
+# Generate password hashes using: echo -n "passwordusername" | md5sum
+
+# Application users (change passwords in production)
+"junoscommander_app" "md5a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+"junoscommander_readonly" "md5b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
+"postgres" "md5c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
+
+# Admin users for PgBouncer management
+"pgbouncer_admin" "md5d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
+"pgbouncer_stats" "md5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+
+# PRODUCTION SECURITY NOTE:
+# Replace these placeholder hashes with actual MD5 hashes
+# Generate using: echo -n "actual_passwordusername" | md5sum
+# Example: echo -n "secretpassjunoscommander_app" | md5sum

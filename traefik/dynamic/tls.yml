@@ -1,0 +1,107 @@
+# TLS Configuration for Traefik
+# Advanced TLS settings for production security
+
+tls:
+  options:
+    # Default TLS configuration
+    default:
+      minVersion: "VersionTLS12"
+      maxVersion: "VersionTLS13"
+      sslStrategies:
+        - "tls.SniStrict"
+
+      # Strong cipher suites for TLS 1.2
+      cipherSuites:
+        # ECDHE with AES-GCM (preferred)
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+
+        # ECDHE with ChaCha20-Poly1305 (mobile-optimized)
+        - "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+        - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+
+        # Fallback for older clients (if needed)
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+
+      # Elliptic curve preferences
+      curvePreferences:
+        - "X25519"        # Modern, fast curve
+        - "CurveP384"     # NIST P-384
+        - "CurveP256"     # NIST P-256
+
+      # ALPN protocols
+      alpnProtocols:
+        - "h2"            # HTTP/2
+        - "http/1.1"      # HTTP/1.1
+
+    # Modern TLS configuration for newer clients
+    modern:
+      minVersion: "VersionTLS13"
+      maxVersion: "VersionTLS13"
+      alpnProtocols:
+        - "h2"
+        - "http/1.1"
+
+    # Intermediate configuration (balance security/compatibility)
+    intermediate:
+      minVersion: "VersionTLS12"
+      maxVersion: "VersionTLS13"
+      cipherSuites:
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+        - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+      curvePreferences:
+        - "X25519"
+        - "CurveP384"
+        - "CurveP256"
+      alpnProtocols:
+        - "h2"
+        - "http/1.1"
+
+    # Legacy configuration (maximum compatibility)
+    legacy:
+      minVersion: "VersionTLS10"
+      maxVersion: "VersionTLS13"
+      cipherSuites:
+        # Include legacy ciphers for older clients
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+        - "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
+        - "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+        - "TLS_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_RSA_WITH_AES_256_CBC_SHA256"
+        - "TLS_RSA_WITH_AES_128_CBC_SHA256"
+        - "TLS_RSA_WITH_AES_256_CBC_SHA"
+        - "TLS_RSA_WITH_AES_128_CBC_SHA"
+      curvePreferences:
+        - "X25519"
+        - "CurveP384"
+        - "CurveP256"
+        - "CurveP224"
+      alpnProtocols:
+        - "h2"
+        - "http/1.1"
+
+  # Certificate stores (if using custom certificates)
+  stores:
+    default:
+      defaultCertificate:
+        certFile: "/certificates/default.crt"
+        keyFile: "/certificates/default.key"

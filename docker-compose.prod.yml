@@ -1,0 +1,394 @@
+# Production Docker Compose for JunosCommander
+# Includes PostgreSQL, Redis, PgBouncer, and monitoring services
+
+version: '3.8'
+
+services:
+  # Main application service
+  junoscommander:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: junoscommander-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - SERVER_MODE=production
+      - DB_HOST=pgbouncer
+      - DB_PORT=5432
+      - DB_NAME=junoscommander
+      - DB_USER=junoscommander_app
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - SESSION_KEY_FILE=/run/secrets/session_key
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - AD_SERVER=ldaps://your-ad-server.com:636
+      - AD_BASE_DN=dc=yourcompany,dc=com
+      - AD_SERVICE_USER_FILE=/run/secrets/ad_service_user
+      - AD_SERVICE_PASSWORD_FILE=/run/secrets/ad_service_password
+    volumes:
+      - ./logs:/app/logs
+      - ./configs:/app/configs:ro
+    networks:
+      - junoscommander-backend
+      - junoscommander-frontend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    secrets:
+      - db_password
+      - redis_password
+      - session_key
+      - jwt_secret
+      - ad_service_user
+      - ad_service_password
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # PostgreSQL primary database
+  postgres:
+    image: postgres:15-alpine
+    container_name: junoscommander-postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-wal:/var/lib/postgresql/wal_archive
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-logs:/var/log/postgresql
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - junoscommander-backend
+    secrets:
+      - postgres_password
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d junoscommander"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # PostgreSQL replica for read scaling (optional)
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: junoscommander-postgres-replica
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGUSER: postgres
+      POSTGRES_MASTER_SERVICE: postgres
+      POSTGRES_MASTER_USER: junoscommander_replicator
+      POSTGRES_MASTER_PASSWORD_FILE: /run/secrets/replication_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: |
+      bash -c '
+      if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+        echo "Creating replica from master..."
+        pg_basebackup -h postgres -D $$PGDATA -U junoscommander_replicator -W -v -P -R
+      fi
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+      '
+    networks:
+      - junoscommander-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets:
+      - postgres_password
+      - replication_password
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - replica  # Enable with --profile replica
+
+  # PgBouncer connection pooler
+  pgbouncer:
+    image: pgbouncer/pgbouncer:latest
+    container_name: junoscommander-pgbouncer
+    ports:
+      - "5432:5432"  # Expose for external connections if needed
+    environment:
+      DATABASES_HOST: postgres
+      DATABASES_PORT: 5432
+      DATABASES_USER: junoscommander_app
+      DATABASES_PASSWORD_FILE: /run/secrets/db_password
+      POOL_MODE: transaction
+      ADMIN_USERS: pgbouncer_admin
+      AUTH_TYPE: md5
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+      - pgbouncer-logs:/var/log/pgbouncer
+    networks:
+      - junoscommander-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets:
+      - db_password
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "psql", "-h", "localhost", "-U", "pgbouncer", "-d", "pgbouncer", "-c", "SHOW DATABASES;"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for session storage and caching
+  redis:
+    image: redis:7-alpine
+    container_name: junoscommander-redis
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass $$(cat /run/secrets/redis_password)
+    ports:
+      - "6379:6379"  # Expose for external connections if needed
+    volumes:
+      - redis-data:/var/lib/redis
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-logs:/var/log/redis
+    networks:
+      - junoscommander-backend
+    secrets:
+      - redis_password
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "$$(cat /run/secrets/redis_password)", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Sentinel for HA (optional)
+  redis-sentinel:
+    image: redis:7-alpine
+    container_name: junoscommander-redis-sentinel
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+      - sentinel-data:/var/lib/redis-sentinel
+    networks:
+      - junoscommander-backend
+    depends_on:
+      - redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+    profiles:
+      - ha  # Enable with --profile ha
+
+  # Nginx reverse proxy with SSL termination
+  nginx:
+    image: nginx:alpine
+    container_name: junoscommander-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    networks:
+      - junoscommander-frontend
+    depends_on:
+      - junoscommander
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: junoscommander-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - junoscommander-backend
+      - monitoring
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: junoscommander-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD_FILE: /run/secrets/grafana_password
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    secrets:
+      - grafana_password
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Log aggregation with Fluentd
+  fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: junoscommander-fluentd
+    volumes:
+      - ./logging/fluentd.conf:/fluentd/etc/fluent.conf:ro
+      - postgres-logs:/var/log/postgresql:ro
+      - redis-logs:/var/log/redis:ro
+      - nginx-logs:/var/log/nginx:ro
+      - pgbouncer-logs:/var/log/pgbouncer:ro
+    networks:
+      - junoscommander-backend
+    restart: unless-stopped
+    profiles:
+      - logging
+
+# Network definitions
+networks:
+  junoscommander-frontend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  junoscommander-backend:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+  monitoring:
+    driver: bridge
+    internal: true
+
+# Volume definitions
+volumes:
+  postgres-data:
+    driver: local
+  postgres-replica-data:
+    driver: local
+  postgres-wal:
+    driver: local
+  postgres-logs:
+    driver: local
+  redis-data:
+    driver: local
+  redis-logs:
+    driver: local
+  sentinel-data:
+    driver: local
+  pgbouncer-logs:
+    driver: local
+  nginx-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# Secrets management
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  replication_password:
+    file: ./secrets/replication_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  session_key:
+    file: ./secrets/session_key.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  ad_service_user:
+    file: ./secrets/ad_service_user.txt
+  ad_service_password:
+    file: ./secrets/ad_service_password.txt
+  grafana_password:
+    file: ./secrets/grafana_password.txt

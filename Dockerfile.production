@@ -1,0 +1,84 @@
+# Multi-stage production build with security scanning
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies and security tools
+RUN apk add --no-cache git gcc musl-dev sqlite-dev make curl && \
+    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Set working directory
+WORKDIR /build
+
+# Copy dependency files first for better caching
+COPY go.mod go.sum ./
+
+# Download and verify dependencies
+RUN go mod download && \
+    go mod verify
+
+# Copy source code
+COPY . .
+
+# Build the application with optimizations
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+    go build -a -installsuffix cgo \
+    -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty) -X main.buildTime=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    -o junoscommander ./cmd/server
+
+# Run security scan on the binary
+RUN trivy fs --no-progress --security-checks vuln --exit-code 0 /build
+
+# Final stage - minimal Alpine image
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk --no-cache add \
+    ca-certificates \
+    tzdata \
+    sqlite \
+    postgresql-client \
+    redis \
+    curl \
+    jq \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user and group
+RUN addgroup -g 1000 -S appuser && \
+    adduser -u 1000 -S appuser -G appuser
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/data /app/logs /app/web /app/configs /app/tmp && \
+    chown -R appuser:appuser /app && \
+    chmod 750 /app/data /app/logs /app/configs && \
+    chmod 755 /app/web /app/tmp
+
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder --chown=appuser:appuser /build/junoscommander /app/
+
+# Copy web assets
+COPY --from=builder --chown=appuser:appuser /build/web /app/web
+
+# Copy default configs
+COPY --from=builder --chown=appuser:appuser /build/.env.example /app/.env.example
+COPY --from=builder --chown=appuser:appuser /build/configs /app/configs
+
+# Set security capabilities
+USER appuser
+
+# Expose application and metrics ports
+EXPOSE 8080 9090
+
+# Health check with timeout
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Set runtime security options
+LABEL maintainer="JunosCommander Team" \
+      version="1.0.0" \
+      description="Production-ready JunosCommander with security hardening" \
+      security.scan="trivy" \
+      security.user="non-root"
+
+# Run the application
+ENTRYPOINT ["/app/junoscommander"]

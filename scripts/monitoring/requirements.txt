@@ -1,0 +1,4 @@
+# Requirements for JunosCommander database monitoring
+psycopg2-binary>=2.9.7
+redis>=4.6.0
+requests>=2.31.0

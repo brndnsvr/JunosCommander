@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  junoscommander:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: junoscommander
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - SERVER_MODE=development
+      - DB_PATH=/app/data/junoscommander.db
+      - AD_SERVER=ldap://openldap:389
+      - AD_BASE_DN=dc=example,dc=com
+    networks:
+      - junoscommander-net
+    depends_on:
+      - openldap
+    restart: unless-stopped
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: junoscommander-ldap
+    environment:
+      LDAP_ORGANISATION: "Example Corp"
+      LDAP_DOMAIN: "example.com"
+      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_CONFIG_PASSWORD: "config"
+      LDAP_TLS: "false"
+    ports:
+      - "389:389"
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    networks:
+      - junoscommander-net
+    restart: unless-stopped
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: junoscommander-ldap-admin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: "openldap"
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8081:80"
+    depends_on:
+      - openldap
+    networks:
+      - junoscommander-net
+    restart: unless-stopped
+
+networks:
+  junoscommander-net:
+    driver: bridge
+
+volumes:
+  ldap-data:
+  ldap-config:

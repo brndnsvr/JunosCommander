@@ -1,0 +1,131 @@
+# Traefik Dynamic Configuration
+http:
+  middlewares:
+    # Security Headers
+    security-headers:
+      headers:
+        customFrameOptionsValue: "DENY"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+          Server: ""
+        sslProxyHeaders:
+          X-Forwarded-Proto: https
+        hostsProxyHeaders:
+          - "X-Forwarded-Host"
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+
+    # Rate Limiting
+    rate-limit:
+      rateLimit:
+        average: 100
+        period: 1m
+        burst: 50
+
+    rate-limit-api:
+      rateLimit:
+        average: 50
+        period: 1m
+        burst: 25
+
+    rate-limit-auth:
+      rateLimit:
+        average: 5
+        period: 1m
+        burst: 3
+
+    # Basic Auth
+    basic-auth:
+      basicAuth:
+        users:
+          - "${ADMIN_USER}:${ADMIN_PASSWORD_HASH}"
+
+    # CORS
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - OPTIONS
+          - PUT
+          - POST
+          - DELETE
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "https://${DOMAIN}"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+
+    # Compression
+    compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+
+    # Retry
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms
+
+    # Circuit Breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: ResponseCodeRatio(500, 600, 0, 600) > 0.30
+
+    # IP Whitelist (Optional)
+    ip-whitelist:
+      ipWhiteList:
+        sourceRange:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+    # Redirect to HTTPS
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  routers:
+    # API Router
+    api:
+      entryPoints:
+        - https
+      rule: "Host(`api.${DOMAIN}`)"
+      service: api@internal
+      middlewares:
+        - security-headers
+        - rate-limit-api
+        - basic-auth
+      tls:
+        certResolver: cloudflare
+
+  services:
+    # Dummy service (required by Traefik)
+    dummy:
+      loadBalancer:
+        servers:
+          - url: "http://localhost"
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_AES_128_GCM_SHA256
+        - TLS_AES_256_GCM_SHA384
+        - TLS_CHACHA20_POLY1305_SHA256
+      curvePreferences:
+        - CurveP521
+        - CurveP384
+      sniStrict: true

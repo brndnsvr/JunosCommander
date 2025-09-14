@@ -1,0 +1,11 @@
+hostname,ip_address,site_name,device_type,device_sub_type,tags,model
+core-router-01,192.168.1.1,HQ,junos,router,"core,production",MX960
+core-router-02,192.168.1.2,HQ,junos,router,"core,production",MX960
+edge-router-01,192.168.2.1,BRANCH1,junos,router,"edge,production",MX480
+edge-router-02,192.168.2.2,BRANCH2,junos,router,"edge,production",MX480
+core-switch-01,192.168.1.10,HQ,junos,switch,"core,production",EX9200
+core-switch-02,192.168.1.11,HQ,junos,switch,"core,production",EX9200
+access-switch-01,192.168.3.1,BRANCH1,junos,switch,"access,production",EX4300
+access-switch-02,192.168.3.2,BRANCH2,junos,switch,"access,production",EX4300
+fw-01,192.168.1.20,HQ,junos,firewall,"security,production",SRX5800
+fw-02,192.168.1.21,HQ,junos,firewall,"security,production",SRX5800
