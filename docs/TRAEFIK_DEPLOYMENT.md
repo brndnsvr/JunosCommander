@@ -483,7 +483,7 @@ For additional support:
 
 1. Review Traefik documentation: https://doc.traefik.io/traefik/
 2. Check JunosCommander logs for application-specific issues
-3. Contact: seaverb@icloud.com
+3. Contact: dev@brndnsvr.com
 4. GitHub Issues: https://github.com/brndnsvr/JunosCommander/issues
 5. Monitor resource usage and performance metrics
 

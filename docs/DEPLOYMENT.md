@@ -560,7 +560,7 @@ docker-compose -f docker-compose.production.yml ps
 ## Support
 
 For support:
-- Email: seaverb@icloud.com
+- Email: dev@brndnsvr.com
 - GitHub Issues: https://github.com/brndnsvr/JunosCommander
 
 ---

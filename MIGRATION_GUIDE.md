@@ -417,7 +417,7 @@ For additional support:
 1. Check application logs: `docker-compose -f docker-compose.prod.yml logs`
 2. Review database logs: `docker exec -it junoscommander-postgres tail -f /var/log/postgresql/postgresql-*.log`
 3. Run health checks: `python3 scripts/monitoring/db_health_check.py`
-4. Contact: seaverb@icloud.com
+4. Contact: dev@brndnsvr.com
 5. GitHub Issues: https://github.com/brndnsvr/JunosCommander/issues
 
 ## Performance Benchmarks

@@ -383,7 +383,7 @@ Copyright (c) 2024 Your Organization. All rights reserved.
 
 - Documentation: [docs/](docs/)
 - Issues: [GitHub Issues](https://github.com/brndnsvr/junoscommander/issues)
-- Email: seaverb@icloud.com
+- Email: dev@brndnsvr.com
 
 ## Roadmap
 

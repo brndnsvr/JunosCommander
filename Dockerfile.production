@@ -74,7 +74,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Set runtime security options
-LABEL maintainer="Brandon Seaver <seaverb@icloud.com>" \
+LABEL maintainer="Brandon Seaver <dev@brndnsvr.com>" \
       version="1.0.0" \
       description="Production-ready JunosCommander with security hardening" \
       security.scan="trivy" \

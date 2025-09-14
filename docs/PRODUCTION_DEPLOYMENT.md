@@ -526,5 +526,5 @@ SESSION_LOG_RETENTION_DAYS=30
 ## Support & Resources
 
 - Issue Tracker: https://github.com/brndnsvr/JunosCommander/issues
-- Contact: seaverb@icloud.com
+- Contact: dev@brndnsvr.com
 - Documentation: See README and docs/ directory
