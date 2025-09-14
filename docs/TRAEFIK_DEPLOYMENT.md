@@ -483,8 +483,8 @@ For additional support:
 
 1. Review Traefik documentation: https://doc.traefik.io/traefik/
 2. Check JunosCommander logs for application-specific issues
-3. Validate network connectivity and DNS resolution
-4. Test certificate renewal process in staging environment
+3. Contact: seaverb@icloud.com
+4. GitHub Issues: https://github.com/brndnsvr/JunosCommander/issues
 5. Monitor resource usage and performance metrics
 
 ## Security Considerations

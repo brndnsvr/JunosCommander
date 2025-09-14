@@ -559,10 +559,9 @@ docker-compose -f docker-compose.production.yml ps
 
 ## Support
 
-For production support:
-- Email: netops-team@your-org.com
-- Slack: #junoscommander-support
-- On-call: Use PagerDuty escalation
+For support:
+- Email: seaverb@icloud.com
+- GitHub Issues: https://github.com/brndnsvr/JunosCommander
 
 ---
 

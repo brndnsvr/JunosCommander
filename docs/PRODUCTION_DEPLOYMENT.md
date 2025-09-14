@@ -525,7 +525,6 @@ SESSION_LOG_RETENTION_DAYS=30
 
 ## Support & Resources
 
-- Documentation: https://docs.junoscommander.com
-- Issue Tracker: https://github.com/your-org/junoscommander/issues
-- Security Issues: security@junoscommander.com
-- Community Forum: https://forum.junoscommander.com
+- Issue Tracker: https://github.com/brndnsvr/JunosCommander/issues
+- Contact: seaverb@icloud.com
+- Documentation: See README and docs/ directory

@@ -833,5 +833,5 @@ go test -bench=. -benchmem ./...
 For issues or questions:
 - Check the troubleshooting section
 - Review logs in `logs/` directory
-- Contact the team lead
-- Create an issue in the repository
+- Email: seaverb@icloud.com
+- Create an issue at: https://github.com/brndnsvr/JunosCommander/issues

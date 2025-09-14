@@ -26,15 +26,12 @@ func NewManager(cfg *config.Config, logger *zap.Logger) *Manager {
 
 // AuthenticateUser validates user credentials against LDAP/AD
 func (m *Manager) AuthenticateUser(username, password string) (*User, error) {
-	// For development/testing, allow a test user
+	// For development/testing with local LDAP mock server
+	// Note: In development, configure a proper LDAP mock server or use environment-based test credentials
 	if m.config.LDAPServer == "ldap://localhost:389" {
-		if username == "admin" && password == "admin" {
-			return &User{
-				Username: "admin",
-				Email:    "admin@example.com",
-				Groups:   []string{"netadmins"},
-			}, nil
-		}
+		// Development mode - credentials should be provided via environment variables
+		// See documentation for setting up a local LDAP test server
+		log.Printf("Warning: Using localhost LDAP server - ensure proper test environment is configured")
 	}
 
 	// Parse LDAP server URL
