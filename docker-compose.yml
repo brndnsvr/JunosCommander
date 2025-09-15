@@ -16,10 +16,12 @@ services:
       - DB_PATH=/app/data/junoscommander.db
       - AD_SERVER=ldap://openldap:389
       - AD_BASE_DN=dc=example,dc=com
+      - REDIS_ADDRESS=redis:6379
     networks:
       - junoscommander-net
     depends_on:
       - openldap
+      - redis
     restart: unless-stopped
 
   openldap:
@@ -55,6 +57,17 @@ services:
       - junoscommander-net
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: junoscommander-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - junoscommander-net
+    restart: unless-stopped
+
 networks:
   junoscommander-net:
     driver: bridge
@@ -62,3 +75,4 @@ networks:
 volumes:
   ldap-data:
   ldap-config:
+  redis-data:

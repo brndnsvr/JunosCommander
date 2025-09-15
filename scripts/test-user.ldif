@@ -1,0 +1,20 @@
+# Create organizational unit for users
+dn: ou=users,dc=example,dc=com
+objectClass: organizationalUnit
+ou: users
+
+# Create test user brandon
+dn: cn=brandon,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+cn: brandon
+sn: Seaver
+givenName: Brandon
+displayName: Brandon Seaver
+uid: brandon
+uidNumber: 1001
+gidNumber: 1001
+homeDirectory: /home/brandon
+mail: brandon@example.com
+userPassword: {SSHA}d3F8mMfP+VQKvC4A1DIZm/dExKW5TnBX

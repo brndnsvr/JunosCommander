@@ -110,22 +110,9 @@ func (r *RedisClient) Set(ctx context.Context, key string, value interface{}, ex
 	return nil
 }
 
-// Get retrieves a value by key
-func (r *RedisClient) Get(ctx context.Context, key string) ([]byte, error) {
-	data, err := r.client.Get(ctx, key).Bytes()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, fmt.Errorf("key %s not found", key)
-		}
-		return nil, fmt.Errorf("failed to get key %s: %w", key, err)
-	}
-
-	return data, nil
-}
-
 // GetJSON retrieves and unmarshals JSON data
 func (r *RedisClient) GetJSON(ctx context.Context, key string, dest interface{}) error {
-	data, err := r.Get(ctx, key)
+	data, err := r.GetBytes(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -177,6 +164,48 @@ func (r *RedisClient) TTL(ctx context.Context, key string) (time.Duration, error
 	}
 
 	return ttl, nil
+}
+
+// SetNX sets key to value if key does not exist
+func (r *RedisClient) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	result, err := r.client.SetNX(ctx, key, value, expiration).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to set key %s: %w", key, err)
+	}
+	return result, nil
+}
+
+// Eval executes a Lua script
+func (r *RedisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	result, err := r.client.Eval(ctx, script, keys, args...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute script: %w", err)
+	}
+	return result, nil
+}
+
+// Get retrieves a value by key (returns string for RedisLockInterface compatibility)
+func (r *RedisClient) Get(ctx context.Context, key string) (string, error) {
+	data, err := r.client.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("key %s not found", key)
+		}
+		return "", fmt.Errorf("failed to get key %s: %w", key, err)
+	}
+	return data, nil
+}
+
+// GetBytes retrieves a value by key as bytes
+func (r *RedisClient) GetBytes(ctx context.Context, key string) ([]byte, error) {
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, fmt.Errorf("key %s not found", key)
+		}
+		return nil, fmt.Errorf("failed to get key %s: %w", key, err)
+	}
+	return data, nil
 }
 
 // Close closes the Redis connection

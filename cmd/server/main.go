@@ -173,8 +173,8 @@ func main() {
 
 	lockManager := lock.NewLockManager(lockProvider, baseLogger)
 
-	// Initialize session store with Redis
-	sessionStore := cache.NewSessionStore(redisClient, cfg.Session.Timeout, baseLogger)
+	// Initialize session store (in-memory for now)
+	sessionStore := auth.NewSessionStore(cfg.Session.Timeout)
 
 	// Initialize components
 	authManager := auth.NewManager(cfg, baseLogger)
