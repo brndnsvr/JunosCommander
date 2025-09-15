@@ -1,8 +1,12 @@
 package api
 
 import (
+	"database/sql"
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -151,23 +155,93 @@ func (h *Handler) GetDevice(c *gin.Context) {
 // CreateDevice creates a new device
 func (h *Handler) CreateDevice(c *gin.Context) {
 	var device database.Device
-	if err := c.ShouldBindJSON(&device); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+
+	// Try to bind JSON first, then fall back to form data
+	contentType := c.GetHeader("Content-Type")
+	if strings.Contains(contentType, "application/json") {
+		if err := c.ShouldBindJSON(&device); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON request"})
+			return
+		}
+	} else {
+		// Handle form data (from web UI)
+		device.Hostname = c.PostForm("hostname")
+		device.IPAddress = c.PostForm("ip_address")
+		device.SiteName = c.PostForm("site_name")
+		device.DeviceType = c.PostForm("device_type")
+		device.Status = c.PostForm("status")
+
+		// Handle optional fields
+		if model := c.PostForm("model"); model != "" {
+			device.Model = sql.NullString{String: model, Valid: true}
+		}
+		if tags := c.PostForm("tags"); tags != "" {
+			device.Tags = sql.NullString{String: tags, Valid: true}
+		}
+		if notes := c.PostForm("notes"); notes != "" {
+			device.Notes = sql.NullString{String: notes, Valid: true}
+		}
+		if swVersion := c.PostForm("sw_version"); swVersion != "" {
+			device.SWVersion = sql.NullString{String: swVersion, Valid: true}
+		}
+		if serialNumber := c.PostForm("serial_number"); serialNumber != "" {
+			device.SerialNumber = sql.NullString{String: serialNumber, Valid: true}
+		}
+	}
+
+	// Validate required fields
+	if device.Hostname == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Hostname is required"})
+		return
+	}
+	if device.IPAddress == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "IP address is required"})
 		return
 	}
 
-	// Set default status if not provided
+	// Validate IP address format
+	if !isValidIP(device.IPAddress) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid IP address format"})
+		return
+	}
+
+	// Set defaults
 	if device.Status == "" {
 		device.Status = "active"
 	}
+	if device.SiteName == "" {
+		device.SiteName = "Default"
+	}
+	if device.DeviceType == "" {
+		device.DeviceType = "router"
+	}
 
+	// Create device in database
 	if err := h.deviceManager.CreateDevice(&device); err != nil {
 		h.logger.Error("Failed to create device", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if strings.Contains(err.Error(), "already exists") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device"})
+		}
 		return
 	}
 
-	c.JSON(http.StatusCreated, device)
+	h.logger.Info("Device created successfully",
+		zap.Int("id", device.ID),
+		zap.String("hostname", device.Hostname),
+		zap.String("ip", device.IPAddress))
+
+	// Return appropriate response based on request type
+	if strings.Contains(contentType, "application/json") {
+		c.JSON(http.StatusCreated, device)
+	} else {
+		// For HTMX requests, return a success message
+		c.HTML(http.StatusCreated, "device-row", gin.H{
+			"device": device,
+			"message": fmt.Sprintf("Device %s created successfully", device.Hostname),
+		})
+	}
 }
 
 // UpdateDevice updates an existing device
@@ -211,10 +285,187 @@ func (h *Handler) DeleteDevice(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// BulkImportDevices imports multiple devices
+// BulkImportDevices imports multiple devices from CSV
 func (h *Handler) BulkImportDevices(c *gin.Context) {
-	// TODO: Implement bulk import
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Not implemented"})
+	// Handle multipart form file upload
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		h.logger.Error("Failed to get uploaded file", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+	defer file.Close()
+
+	// Validate file extension
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".csv") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File must be a CSV"})
+		return
+	}
+
+	// Parse CSV
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		h.logger.Error("Failed to parse CSV", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid CSV format"})
+		return
+	}
+
+	if len(records) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "CSV file is empty or only contains headers"})
+		return
+	}
+
+	// Parse header to get column indices
+	headers := records[0]
+	columnMap := make(map[string]int)
+	for i, header := range headers {
+		columnMap[strings.ToLower(strings.TrimSpace(header))] = i
+	}
+
+	// Validate required columns
+	requiredColumns := []string{"hostname", "ip_address"}
+	for _, col := range requiredColumns {
+		if _, ok := columnMap[col]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Missing required column: %s", col),
+				"required_columns": requiredColumns,
+				"optional_columns": []string{"type", "site", "port", "model", "tags", "notes"},
+			})
+			return
+		}
+	}
+
+	// Process devices
+	var devices []database.Device
+	var errors []string
+	successCount := 0
+	failedCount := 0
+
+	for i, record := range records[1:] { // Skip header row
+		lineNum := i + 2 // Account for header and 0-based index
+
+		// Extract values with bounds checking
+		getValue := func(colName string) string {
+			if idx, ok := columnMap[colName]; ok && idx < len(record) {
+				return strings.TrimSpace(record[idx])
+			}
+			return ""
+		}
+
+		hostname := getValue("hostname")
+		ipAddress := getValue("ip_address")
+
+		// Validate required fields
+		if hostname == "" || ipAddress == "" {
+			errors = append(errors, fmt.Sprintf("Line %d: missing hostname or IP address", lineNum))
+			failedCount++
+			continue
+		}
+
+		// Validate IP address format
+		if !isValidIP(ipAddress) {
+			errors = append(errors, fmt.Sprintf("Line %d: invalid IP address '%s'", lineNum, ipAddress))
+			failedCount++
+			continue
+		}
+
+		// Create device object
+		device := database.Device{
+			Hostname:   hostname,
+			IPAddress:  ipAddress,
+			Status:     "active", // Default status
+		}
+
+		// Set optional fields
+		if site := getValue("site"); site != "" {
+			device.SiteName = site
+		} else {
+			device.SiteName = "Default" // Default site
+		}
+
+		if deviceType := getValue("type"); deviceType != "" {
+			device.DeviceType = deviceType
+		} else if deviceType := getValue("device_type"); deviceType != "" {
+			device.DeviceType = deviceType
+		} else {
+			device.DeviceType = "router" // Default type
+		}
+
+		if model := getValue("model"); model != "" {
+			device.Model = sql.NullString{String: model, Valid: true}
+		}
+
+		if tags := getValue("tags"); tags != "" {
+			device.Tags = sql.NullString{String: tags, Valid: true}
+		}
+
+		if notes := getValue("notes"); notes != "" {
+			device.Notes = sql.NullString{String: notes, Valid: true}
+		}
+
+		devices = append(devices, device)
+	}
+
+	// Import devices into database
+	for i, device := range devices {
+		if err := h.deviceManager.CreateDevice(&device); err != nil {
+			lineNum := i + 2
+			if strings.Contains(err.Error(), "already exists") {
+				errors = append(errors, fmt.Sprintf("Line %d: device '%s' already exists", lineNum, device.Hostname))
+			} else {
+				errors = append(errors, fmt.Sprintf("Line %d: %s", lineNum, err.Error()))
+			}
+			failedCount++
+		} else {
+			successCount++
+		}
+	}
+
+	// Prepare response
+	response := gin.H{
+		"total":     len(devices),
+		"success":   successCount,
+		"failed":    failedCount,
+		"processed": successCount + failedCount,
+	}
+
+	if len(errors) > 0 {
+		response["errors"] = errors
+		// Limit errors in response to first 10
+		if len(errors) > 10 {
+			response["errors"] = append(errors[:10], fmt.Sprintf("... and %d more errors", len(errors)-10))
+		}
+	}
+
+	statusCode := http.StatusOK
+	if successCount == 0 && failedCount > 0 {
+		statusCode = http.StatusBadRequest
+	} else if failedCount > 0 {
+		statusCode = http.StatusPartialContent
+	}
+
+	h.logger.Info("Bulk device import completed",
+		zap.Int("success", successCount),
+		zap.Int("failed", failedCount),
+		zap.String("filename", header.Filename))
+
+	c.JSON(statusCode, response)
+}
+
+// isValidIP validates an IP address
+func isValidIP(ip string) bool {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		num, err := strconv.Atoi(part)
+		if err != nil || num < 0 || num > 255 {
+			return false
+		}
+	}
+	return true
 }
 
 // ExecuteTask executes a task on devices

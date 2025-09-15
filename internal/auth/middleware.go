@@ -11,20 +11,27 @@ import (
 // Middleware provides JWT authentication middleware for API routes
 func Middleware(store *SessionStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get token from Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
-			c.Abort()
-			return
-		}
+		var tokenString string
 
-		// Extract token
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
-			c.Abort()
-			return
+		// Try to get token from Authorization header first
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" {
+			// Extract token from Bearer format
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			if tokenString == authHeader {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
+				c.Abort()
+				return
+			}
+		} else {
+			// Fallback to session cookie
+			sessionCookie, err := c.Cookie("session_token")
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header or session cookie"})
+				c.Abort()
+				return
+			}
+			tokenString = sessionCookie
 		}
 
 		// Parse and validate token

@@ -1,0 +1,6 @@
+hostname,ip_address,type,site,port
+router1,192.168.1.1,router,HQ,22
+router2,192.168.1.2,router,HQ,22
+switch1,192.168.2.1,switch,DC1,22
+switch2,192.168.2.2,switch,DC1,22
+firewall1,192.168.3.1,firewall,HQ,22
