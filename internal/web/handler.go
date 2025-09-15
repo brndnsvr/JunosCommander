@@ -169,6 +169,7 @@ func (h *Handler) DevicesPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "devices.html", gin.H{
 		"title":   "Devices - JunosCommander",
 		"user":    session.User,
+		"username": session.User.Username,
 		"devices": devices,
 		"filters": filters,
 	})
