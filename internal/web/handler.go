@@ -142,7 +142,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "dashboard.html", gin.H{
 		"title":       "Dashboard - JunosCommander",
-		"user":        session.User,
+		"username":    session.User.Username,
 		"deviceCount": len(devices),
 		"activeTasks": 0, // TODO: Get from task executor
 		"lastUpdate":  time.Now().Format("15:04:05"),

@@ -1,104 +1,111 @@
-{{define "content"}}
-<div class="min-h-screen bg-gray-100">
-    <!-- Navigation -->
-    <nav class="bg-white shadow">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <h1 class="text-xl font-bold">JunosCommander</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - JunosCommander</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <!-- Navigation -->
+        <nav class="bg-white shadow">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex">
+                        <div class="flex-shrink-0 flex items-center">
+                            <h1 class="text-xl font-bold">JunosCommander</h1>
+                        </div>
+                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                            <a href="/dashboard" class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Dashboard
+                            </a>
+                            <a href="/devices" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Devices
+                            </a>
+                            <a href="/tasks" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Tasks
+                            </a>
+                            <a href="/settings" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Settings
+                            </a>
+                        </div>
                     </div>
-                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                        <a href="/dashboard" class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Dashboard
-                        </a>
-                        <a href="/devices" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Devices
-                        </a>
-                        <a href="/tasks" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Tasks
-                        </a>
-                        <a href="/settings" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Settings
-                        </a>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <span class="text-sm text-gray-500 mr-4">{{.user.Username}}</span>
-                    <a href="/logout" class="text-sm text-red-600 hover:text-red-800">Logout</a>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <main>
-        <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-            <!-- Stats -->
-            <div class="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <dt class="text-sm font-medium text-gray-500 truncate">
-                            Total Devices
-                        </dt>
-                        <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                            {{.deviceCount}}
-                        </dd>
-                    </div>
-                </div>
-
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <dt class="text-sm font-medium text-gray-500 truncate">
-                            Active Tasks
-                        </dt>
-                        <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                            {{.activeTasks}}
-                        </dd>
-                    </div>
-                </div>
-
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <dt class="text-sm font-medium text-gray-500 truncate">
-                            Last Update
-                        </dt>
-                        <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                            {{.lastUpdate}}
-                        </dd>
+                    <div class="flex items-center">
+                        <span class="text-sm text-gray-500 mr-4">{{.username}}</span>
+                        <a href="/logout" class="text-sm text-red-600 hover:text-red-800">Logout</a>
                     </div>
                 </div>
             </div>
+        </nav>
 
-            <!-- Quick Actions -->
-            <div class="bg-white shadow rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                        Quick Actions
-                    </h3>
-                    <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                        <button hx-get="/api/v1/tasks/execute"
-                                hx-target="#task-results"
-                                hx-vals='{"task_type": "health_check", "device_ids": []}'
-                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Health Check All
-                        </button>
-                        <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Backup Configs
-                        </button>
-                        <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Discover Devices
-                        </button>
-                        <a href="/devices" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Manage Devices
-                        </a>
+        <!-- Main Content -->
+        <main>
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <!-- Stats -->
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Total Devices
+                            </dt>
+                            <dd class="mt-1 text-3xl font-semibold text-gray-900">
+                                {{.deviceCount}}
+                            </dd>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Active Tasks
+                            </dt>
+                            <dd class="mt-1 text-3xl font-semibold text-gray-900">
+                                {{.activeTasks}}
+                            </dd>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                System Status
+                            </dt>
+                            <dd class="mt-1 text-2xl font-semibold text-green-600">
+                                Operational
+                            </dd>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Task Results -->
-            <div id="task-results" class="mt-8"></div>
-        </div>
-    </main>
-</div>
-{{end}}
+                <!-- Quick Actions -->
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                            Quick Actions
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                            <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Health Check All
+                            </button>
+                            <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Backup Configs
+                            </button>
+                            <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Discover Devices
+                            </button>
+                            <a href="/devices" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Manage Devices
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Task Results -->
+                <div id="task-results" class="mt-8"></div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

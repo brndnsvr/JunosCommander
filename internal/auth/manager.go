@@ -3,7 +3,9 @@ package auth
 import (
 	"crypto/tls"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/go-ldap/ldap/v3"
 	"github.com/junoscommander/junoscommander/internal/config"
@@ -26,21 +28,33 @@ func NewManager(cfg *config.Config, logger *zap.Logger) *Manager {
 
 // AuthenticateUser validates user credentials against LDAP/AD
 func (m *Manager) AuthenticateUser(username, password string) (*User, error) {
-	// For development/testing with local LDAP mock server
-	// Note: In development, configure a proper LDAP mock server or use environment-based test credentials
-	if m.config.LDAPServer == "ldap://localhost:389" {
-		// Development mode - credentials should be provided via environment variables
-		// See documentation for setting up a local LDAP test server
-		m.logger.Warn("Using localhost LDAP server - ensure proper test environment is configured")
+	// Development mode bypass when AD is unreachable
+	if os.Getenv("SERVER_MODE") == "development" && os.Getenv("DEV_AUTH_BYPASS") == "true" {
+		// Check against environment variables for testing
+		testUser := os.Getenv("TEST_USERNAME")
+		testPass := os.Getenv("TEST_PASSWORD")
+
+		if testUser != "" && testPass != "" && username == testUser && password == testPass {
+			m.logger.Warn("Using development authentication bypass",
+				zap.String("user", username))
+			return &User{
+				Username: username,
+				Email:    fmt.Sprintf("%s@centersquaredc.com", username),
+				Groups:   []string{"netadmins", "users"},
+			}, nil
+		}
 	}
 
 	// Parse LDAP server URL
 	serverURL := strings.TrimPrefix(m.config.LDAPServer, "ldap://")
 	serverURL = strings.TrimPrefix(serverURL, "ldaps://")
 
-	// Connect to LDAP server
+	// Connect to LDAP server with timeout
 	var conn *ldap.Conn
 	var err error
+
+	// Add connection timeout for development environments
+	ldap.DefaultTimeout = 5 * time.Second
 
 	if m.config.UseTLS {
 		conn, err = ldap.DialTLS("tcp", serverURL, &tls.Config{InsecureSkipVerify: true})

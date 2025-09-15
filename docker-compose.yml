@@ -9,18 +9,28 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    env_file:
+      - .env
     environment:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - SERVER_MODE=development
-      - DB_PATH=/app/data/junoscommander.db
-      - AD_SERVER=ldap://openldap:389
-      - AD_BASE_DN=dc=example,dc=com
+      - DB_TYPE=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=junoscommander
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres123
+      - DB_SSL_MODE=disable
       - REDIS_ADDRESS=redis:6379
+      - REDIS_PASSWORD=
+      - DEV_AUTH_BYPASS=true
+      - TEST_USERNAME=brandon.seaver
+      - TEST_PASSWORD=test123
     networks:
       - junoscommander-net
     depends_on:
-      - openldap
+      - postgres
       - redis
     restart: unless-stopped
 
@@ -57,6 +67,21 @@ services:
       - junoscommander-net
     restart: unless-stopped
 
+  postgres:
+    image: postgres:15-alpine
+    container_name: junoscommander-db
+    environment:
+      POSTGRES_DB: junoscommander
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - junoscommander-net
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     container_name: junoscommander-redis
@@ -75,4 +100,5 @@ networks:
 volumes:
   ldap-data:
   ldap-config:
+  postgres-data:
   redis-data:
