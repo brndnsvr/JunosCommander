@@ -31,7 +31,7 @@ func (m *Manager) AuthenticateUser(username, password string) (*User, error) {
 	if m.config.LDAPServer == "ldap://localhost:389" {
 		// Development mode - credentials should be provided via environment variables
 		// See documentation for setting up a local LDAP test server
-		log.Printf("Warning: Using localhost LDAP server - ensure proper test environment is configured")
+		m.logger.Warn("Using localhost LDAP server - ensure proper test environment is configured")
 	}
 
 	// Parse LDAP server URL

@@ -356,7 +356,7 @@ func (r *RedisClient) GetStats(ctx context.Context) (map[string]string, error) {
 
 	// Parse info string into map
 	stats := make(map[string]string)
-	lines := []string{} // You'd need to split the info string by lines
+	lines := strings.Split(info, "\n")
 	for _, line := range lines {
 		if len(line) > 0 && !strings.HasPrefix(line, "#") {
 			parts := strings.SplitN(line, ":", 2)
